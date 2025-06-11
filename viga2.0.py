@@ -33,6 +33,50 @@ BAR_DB = {
     "1": 5.10,
 }
 
+
+def calc_as_required(moments, geometry, materials):
+    """Calculate required steel area for a set of moments.
+
+    Parameters
+    ----------
+    moments : array-like
+        Bending moments (Ton·m) at the three sections.
+    geometry : dict
+        Keys ``b``, ``h``, ``r``, ``de`` (diámetro de estribo) and ``db``
+        (diámetro de barra) in centimeters.
+    materials : dict
+        Keys ``fc`` (kg/cm²), ``fy`` (kg/cm²) and ``phi``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Required steel area (cm²) for each moment.
+    """
+
+    b = geometry["b"]
+    h = geometry["h"]
+    r = geometry["r"]
+    de = geometry["de"]
+    db = geometry["db"]
+    d = h - r - de - 0.5 * db
+
+    fc = materials["fc"]
+    fy = materials["fy"]
+    phi = materials["phi"]
+
+    A = fy ** 2 / (1.7 * fc * b)
+    B = fy * d
+
+    areas = []
+    for m in np.abs(moments):
+        Mu = m * 1e5  # ton·m → kg·cm
+        disc = B ** 2 - 4 * A * (Mu / phi)
+        disc = max(disc, 0.0)
+        As = (B - np.sqrt(disc)) / (2 * A)
+        areas.append(As)
+
+    return np.array(areas)
+
 class MomentApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -249,6 +293,24 @@ class DesignWindow(QMainWindow):
         self.setWindowTitle("Parte 2 – Diseño de Acero")
         self._build_ui()
 
+    def _get_design_params(self):
+        """Return geometry and material parameters as floats."""
+        try:
+            b = float(self.edits["b (cm)"].text())
+            h = float(self.edits["h (cm)"].text())
+            r = float(self.edits["r (cm)"].text())
+            fc = float(self.edits["f'c (kg/cm²)"].text())
+            fy = float(self.edits["fy (kg/cm²)"].text())
+            phi = float(self.edits["φ"].text())
+            de = float(self.edits["ϕ estribo (cm)"].text())
+            db = float(self.edits["ϕ varilla (cm)"].text())
+        except ValueError:
+            raise
+
+        geom = {"b": b, "h": h, "r": r, "de": de, "db": db}
+        mats = {"fc": fc, "fy": fy, "phi": phi}
+        return geom, mats
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -319,20 +381,21 @@ class DesignWindow(QMainWindow):
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self.draw_section)
+            ed.editingFinished.connect(self.update_as)
         self.draw_section()
-        self.draw_beam_distribution()
         self.update_as()
 
     def draw_section(self):
         try:
-            b = float(self.edits["b (cm)"].text())
-            h = float(self.edits["h (cm)"].text())
-            r = float(self.edits["r (cm)"].text())
-            de = float(self.edits["ϕ estribo (cm)"].text())
-            db = float(self.edits["ϕ varilla (cm)"].text())
+            geom, _ = self._get_design_params()
         except ValueError:
             return
 
+        b = geom["b"]
+        h = geom["h"]
+        r = geom["r"]
+        de = geom["de"]
+        db = geom["db"]
         d = h - r - de - 0.5 * db
 
         self.ax_sec.clear()
@@ -355,10 +418,15 @@ class DesignWindow(QMainWindow):
         self.canvas.draw()
 
     def draw_beam_distribution(self):
-        """Display As- and As+ values along a horizontal beam."""
+        """Display required As- and As+ values along a horizontal beam."""
+        try:
+            geom, mats = self._get_design_params()
+        except ValueError:
+            return
+
         x_ctrl = [0.0, 0.5, 1.0]
-        areas_n = np.abs(self.mn_corr)
-        areas_p = np.abs(self.mp_corr)
+        areas_n = calc_as_required(self.mn_corr, geom, mats)
+        areas_p = calc_as_required(self.mp_corr, geom, mats)
 
         self.ax_dist.clear()
         self.ax_dist.plot([0, 1], [0, 0], 'k-', lw=6)
@@ -411,12 +479,22 @@ class DesignWindow(QMainWindow):
                 lab.setText(f"{val:.2f}")
                 as_vals.append(val)
 
+        try:
+            geom, mats = self._get_design_params()
+        except ValueError:
+            return
+
+        as_req = calc_as_required(self.mp_corr, geom, mats)
+        self.draw_beam_distribution()
+
         self.ax_as.clear()
-        self.ax_as.plot(x, as_vals, 'bo-')
+        self.ax_as.plot(x, as_req, 'rs--', label='As requerido')
+        self.ax_as.plot(x, as_vals, 'bo-', label='As diseñado')
         self.ax_as.set_xticks(x)
         self.ax_as.set_xticklabels(['Sección 1', 'Sección 2', 'Sección 3'])
         self.ax_as.set_ylabel('As (cm²)')
         self.ax_as.set_xlabel('Posición')
+        self.ax_as.legend(fontsize=8)
         self.ax_as.grid(True)
         self.canvas_as.draw()
 
