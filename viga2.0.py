@@ -372,6 +372,10 @@ class DesignWindow(QMainWindow):
 
         row_start = len(labels) + 2
 
+        layout.addWidget(QLabel("As total (cm²):"), row_start, 0)
+        self.as_total_label = QLabel("0.00")
+        layout.addWidget(self.as_total_label, row_start, 1)
+
         layout.addWidget(QLabel("As min (cm²):"), row_start, 2)
         self.as_min_label = QLabel("0.00")
         layout.addWidget(self.as_min_label, row_start, 3)
@@ -399,8 +403,16 @@ class DesignWindow(QMainWindow):
         layout.addLayout(self.combo_grid, row_start + 3, 0, 1, 8)
 
         self.btn_capture = QPushButton("Capturar Diseño")
+        self.btn_memoria = QPushButton("Memoria de Cálculo")
+        self.btn_salir = QPushButton("Salir")
+
         self.btn_capture.clicked.connect(self._capture_design)
+        self.btn_memoria.clicked.connect(self.show_memoria)
+        self.btn_salir.clicked.connect(QApplication.instance().quit)
+
         layout.addWidget(self.btn_capture, row_start + 4, 0, 1, 2)
+        layout.addWidget(self.btn_memoria, row_start + 4, 2, 1, 2)
+        layout.addWidget(self.btn_salir,   row_start + 4, 4, 1, 2)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self._redraw)
@@ -418,6 +430,7 @@ class DesignWindow(QMainWindow):
 
         self.as_min = 0.0
         self.as_max = 0.0
+        self.as_total = 0.0
 
         self.draw_section()
         self.draw_required_distribution()
@@ -434,6 +447,7 @@ class DesignWindow(QMainWindow):
             return
 
         d = h - r - de - 0.5 * db
+        y_d = r + de + 0.5 * db
 
         self.ax_sec.clear()
         self.ax_sec.set_aspect('equal')
@@ -446,8 +460,8 @@ class DesignWindow(QMainWindow):
         self.ax_sec.annotate('', xy=(-5, 0), xytext=(-5, h), arrowprops=dict(arrowstyle='<->'))
         self.ax_sec.text(-6, h / 2, 'h', ha='right', va='center', rotation=90)
 
-        self.ax_sec.annotate('', xy=(-2, h), xytext=(-2, d), arrowprops=dict(arrowstyle='<->'))
-        self.ax_sec.text(-3, (h + d) / 2, 'd', ha='right', va='center', rotation=90)
+        self.ax_sec.annotate('', xy=(-2, h), xytext=(-2, y_d), arrowprops=dict(arrowstyle='<->'))
+        self.ax_sec.text(-3, (h + y_d) / 2, 'd', ha='right', va='center', rotation=90)
 
         self.ax_sec.set_xlim(-10, b + 10)
         self.ax_sec.set_ylim(-10, h + 10)
@@ -515,8 +529,13 @@ class DesignWindow(QMainWindow):
             d2_list.append(d2.currentText())
 
         for lbl, total, req in zip(self.as_total_labels, totals, as_reqs):
-            ok = " OK" if total >= req else ""
-            lbl.setText(f"{total:.2f}{ok}")
+            status = "OK" if total >= req else "NO OK"
+            lbl.setText(f"{total:.2f} {status}")
+
+        self.as_total = sum(totals)
+        overall_ok = all(t >= r for t, r in zip(totals, as_reqs))
+        ov_status = "OK" if overall_ok else "NO OK"
+        self.as_total_label.setText(f"{self.as_total:.2f} {ov_status}")
 
         if totals:
             idx = int(np.argmax(totals))
@@ -565,6 +584,23 @@ class DesignWindow(QMainWindow):
             "Captura",
             "Dise\u00f1o copiado al portapapeles.\nUsa Ctrl+V para pegar.",
         )
+
+    def show_memoria(self):
+        try:
+            b = float(self.edits["b (cm)"].text())
+            h = float(self.edits["h (cm)"].text())
+        except ValueError:
+            b = h = 0
+        title = f"VIGA {int(b)}X{int(h)}"
+        text = (
+            "Memoria de c\u00e1lculo:\n"
+            "Mu corregido seg\u00fan NTP E.060.\n"
+            "As = Mu / (\u03c6 fy d (1-0.59\u03b2))\n"
+            "d = h - r - \u03c6_estribo - 0.5 \u03c6_barra\n"
+            "As_{min} = 0.7 \u221a(fc)/fy * b * d\n"
+            "As_{max} = p_{max} * b * d"
+        )
+        QMessageBox.information(self, title, text)
 
 
 
