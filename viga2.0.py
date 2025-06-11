@@ -188,7 +188,7 @@ class MomentApp(QMainWindow):
                 sel.annotation.set_text(f"x={x:.2f}, M={y:.2f} TN·m")
 
     def _format(self, ax):
-        ax.set_xlim(-0.02, 1.08)
+        ax.set_xlim(-0.02, 1.02)
         ax.set_xticks([0, 0.5, 1.0])
         ax.set_xticklabels(['Extremo I','Centro','Extremo II'], fontsize=9)
         ax.set_ylabel('TN·m', fontsize=9)
@@ -253,6 +253,7 @@ class DesignWindow(QMainWindow):
         self.mp_corr = mp_corr
         self.setWindowTitle("Parte 2 – Diseño de Acero")
         self._build_ui()
+        self.resize(900, 600)
 
     def _calc_as_req(self, Mu, fc, b, d, fy, phi):
         """Calculate required steel area for a single moment."""
@@ -394,8 +395,8 @@ class DesignWindow(QMainWindow):
         self.canvas_sec = FigureCanvas(self.fig_sec)
         layout.addWidget(self.canvas_sec, 0, 2, len(labels) + 2, 4)
 
-        self.fig_dist, (self.ax_req, self.ax_des) = plt.subplots(
-            2, 1, figsize=(5, 6), constrained_layout=True
+        self.fig_dist, self.ax_dist = plt.subplots(
+            figsize=(5, 6), constrained_layout=True
         )
         self.canvas_dist = FigureCanvas(self.fig_dist)
         layout.addWidget(self.canvas_dist, row_start + 2, 0, 1, 8)
@@ -433,7 +434,6 @@ class DesignWindow(QMainWindow):
         self.as_total = 0.0
 
         self.draw_section()
-        self.draw_required_distribution()
         self.update_design_as()
 
     def draw_section(self):
@@ -470,28 +470,26 @@ class DesignWindow(QMainWindow):
 
     def _redraw(self):
         self.draw_section()
-        self.draw_required_distribution()
         self.update_design_as()
 
-    def draw_required_distribution(self):
-        """Display required As along the beam."""
+    def draw_distribution(self, req_n, req_p, des_n, des_p):
+        """Show required and design As on a single graph."""
         x_ctrl = [0.0, 0.5, 1.0]
-        areas_n, areas_p = self._required_areas()
+        self.ax_dist.clear()
+        self.ax_dist.plot([0, 1], [0, 0], 'k-', lw=6)
 
-        self.ax_req.clear()
-        self.ax_req.plot([0, 1], [0, 0], 'k-', lw=6)
+        all_vals = list(req_n) + list(req_p) + list(des_n) + list(des_p)
+        max_val = max(max(map(abs, all_vals)), 1)
 
-        y_off = 0.1 * max(np.max(areas_n), np.max(areas_p), 1)
-        for x, a_n in zip(x_ctrl, areas_n):
-            self.ax_req.text(x, y_off, f"As- {a_n:.2f}", ha='center',
-                             va='bottom', color='b', fontsize=9)
-        for x, a_p in zip(x_ctrl, areas_p):
-            self.ax_req.text(x, -y_off, f"As+ {a_p:.2f}", ha='center',
-                             va='top', color='r', fontsize=9)
+        self.ax_dist.plot(x_ctrl, req_n, 'b-o', label='As req -')
+        self.ax_dist.plot(x_ctrl, [-v for v in req_p], 'r-o', label='As req +')
+        self.ax_dist.plot(x_ctrl, des_n, 'g--o', label='As dis -')
+        self.ax_dist.plot(x_ctrl, [-v for v in des_p], 'm--o', label='As dis +')
 
-        self.ax_req.set_xlim(-0.05, 1.05)
-        self.ax_req.set_ylim(-2*y_off, 2*y_off)
-        self.ax_req.axis('off')
+        self.ax_dist.set_xlim(-0.05, 1.05)
+        self.ax_dist.set_ylim(-1.2 * max_val, 1.2 * max_val)
+        self.ax_dist.axis('off')
+        self.ax_dist.legend(loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=8)
         self.canvas_dist.draw()
 
     def update_design_as(self):
@@ -556,25 +554,9 @@ class DesignWindow(QMainWindow):
                 self.base_req_label.setText(f"{base_req:.1f}")
                 self.base_msg_label.setText("OK" if base_req <= b_val else "Aumentar base o capa")
 
-        self.draw_design_distribution(totals)
+        self.draw_distribution(as_req_n, as_req_p, totals[:3], totals[3:])
 
-    def draw_design_distribution(self, areas):
-        x_ctrl = [0.0, 0.5, 1.0]
-        areas_n = areas[:3]
-        areas_p = areas[3:]
-        self.ax_des.clear()
-        self.ax_des.plot([0, 1], [0, 0], 'k-', lw=6)
-        y_off = 0.1 * max(max(areas_n, default=0), max(areas_p, default=0), 1)
-        for x, a in zip(x_ctrl, areas_n):
-            self.ax_des.text(x, y_off, f"Asd- {a:.2f}", ha='center',
-                             va='bottom', color='g', fontsize=9)
-        for x, a in zip(x_ctrl, areas_p):
-            self.ax_des.text(x, -y_off, f"Asd+ {a:.2f}", ha='center',
-                             va='top', color='g', fontsize=9)
-        self.ax_des.set_xlim(-0.05, 1.05)
-        self.ax_des.set_ylim(-2 * y_off, 2 * y_off)
-        self.ax_des.axis('off')
-        self.canvas_dist.draw()
+    # The old draw_design_distribution method has been replaced by draw_distribution
 
     def _capture_design(self):
         pix = self.centralWidget().grab()
@@ -589,18 +571,36 @@ class DesignWindow(QMainWindow):
         try:
             b = float(self.edits["b (cm)"].text())
             h = float(self.edits["h (cm)"].text())
+            r = float(self.edits["r (cm)"].text())
+            fc = float(self.edits["f'c (kg/cm²)"].text())
+            fy = float(self.edits["fy (kg/cm²)"].text())
+            phi = float(self.edits["φ"].text())
+            de = DIAM_CM.get(self.cb_estribo.currentText(), 0)
+            db = DIAM_CM.get(self.cb_varilla.currentText(), 0)
         except ValueError:
-            b = h = 0
+            QMessageBox.warning(self, "Error", "Datos num\u00e9ricos inv\u00e1lidos")
+            return
+
+        d = h - r - de - 0.5 * db
+        as_req_n, as_req_p = self._required_areas()
+
+        lines = [
+            "Memoria de c\u00e1lculo detallada",
+            f"b = {b:.2f} cm, h = {h:.2f} cm, r = {r:.2f} cm",
+            f"d = h - r - \u03c6_estribo - 0.5 \u03c6_barra = {d:.2f} cm",
+            "As = Mu / (\u03c6 fy d (1-0.59\u03b2_1))",
+            f"As_min = {self.as_min:.2f} cm\u00b2",
+            f"As_max = {self.as_max:.2f} cm\u00b2",
+            "Momentos y \u00e1reas requeridas:" 
+        ]
+        for i, (mneg, mpos, asn, asp) in enumerate(zip(self.mn_corr, self.mp_corr, as_req_n, as_req_p), 1):
+            lines.append(f"M{i}- = {mneg:.2f} TN·m \u2192 As-req = {asn:.2f} cm\u00b2")
+            lines.append(f"M{i}+ = {mpos:.2f} TN·m \u2192 As+req = {asp:.2f} cm\u00b2")
+
+        text = "\n".join(lines)
+        QGuiApplication.clipboard().setText(text)
         title = f"VIGA {int(b)}X{int(h)}"
-        text = (
-            "Memoria de c\u00e1lculo:\n"
-            "Mu corregido seg\u00fan NTP E.060.\n"
-            "As = Mu / (\u03c6 fy d (1-0.59\u03b2))\n"
-            "d = h - r - \u03c6_estribo - 0.5 \u03c6_barra\n"
-            "As_{min} = 0.7 \u221a(fc)/fy * b * d\n"
-            "As_{max} = p_{max} * b * d"
-        )
-        QMessageBox.information(self, title, text)
+        QMessageBox.information(self, title, text + "\n\n(Copiado al portapapeles)")
 
 
 
