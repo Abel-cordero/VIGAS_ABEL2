@@ -17,6 +17,8 @@ class MomentApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Parte 1 – Momentos y Diagramas (NTP E.060)")
+        self.mn_corr = None
+        self.mp_corr = None
         self._build_ui()
         self.resize(1200, 800)
         self.show()
@@ -192,11 +194,19 @@ class MomentApp(QMainWindow):
         mn_c, mp_c = self.correct_moments(mn, mp, sys_t)
         self.plot_original()
         self.plot_corrected(mn_c, mp_c)
+        self.mn_corr = mn_c
+        self.mp_corr = mp_c
 
     def on_next(self):
-        QMessageBox.information(
-            self, "Siguiente", "Parte 2: diseño de acero aún no implementada."
-        )
+        if self.mn_corr is None or self.mp_corr is None:
+            QMessageBox.warning(
+                self,
+                "Advertencia",
+                "Primero calcule los momentos corregidos",
+            )
+            return
+        self.design_win = DesignWindow(self.mn_corr, self.mp_corr)
+        self.design_win.show()
 
     def _capture_diagram(self):
         pix = self.canvas.grab()
@@ -208,6 +218,95 @@ class MomentApp(QMainWindow):
             "Usa Ctrl+V para pegar."
         )
 
+
+class DesignWindow(QMainWindow):
+    """Ventana para la etapa de diseño de acero (solo interfaz gráfica)."""
+
+    def __init__(self, mn_corr, mp_corr):
+        super().__init__()
+        self.mn_corr = mn_corr
+        self.mp_corr = mp_corr
+        self.setWindowTitle("Parte 2 – Diseño de Acero")
+        self._build_ui()
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QGridLayout(central)
+
+        labels = [
+            ("b (cm)", "30"),
+            ("h (cm)", "50"),
+            ("r (cm)", "4"),
+            ("f'c (kg/cm²)", "280"),
+            ("fy (kg/cm²)", "4200"),
+            ("φ", "0.9"),
+            ("ϕ estribo (cm)", "1.0"),
+            ("ϕ varilla (cm)", "1.6"),
+        ]
+
+        self.edits = {}
+        for row, (text, val) in enumerate(labels):
+            layout.addWidget(QLabel(text), row, 0)
+            ed = QLineEdit(val)
+            ed.setAlignment(Qt.AlignRight)
+            layout.addWidget(ed, row, 1)
+            self.edits[text] = ed
+
+        layout.addWidget(QLabel("Varilla 1: n, ϕ(cm)"), 0, 2)
+        self.v1n = QLineEdit("0")
+        self.v1d = QLineEdit("0")
+        layout.addWidget(self.v1n, 0, 3)
+        layout.addWidget(self.v1d, 0, 4)
+
+        layout.addWidget(QLabel("Varilla 2: n, ϕ(cm)"), 1, 2)
+        self.v2n = QLineEdit("0")
+        self.v2d = QLineEdit("0")
+        layout.addWidget(self.v2n, 1, 3)
+        layout.addWidget(self.v2d, 1, 4)
+
+        layout.addWidget(QLabel("As total (cm²):"), 2, 2)
+        self.as_total = QLabel("-")
+        layout.addWidget(self.as_total, 2, 3, 1, 2)
+
+        self.fig_sec, self.ax_sec = plt.subplots(figsize=(4, 4))
+        self.canvas = FigureCanvas(self.fig_sec)
+        layout.addWidget(self.canvas, 3, 0, 1, 5)
+
+        for ed in self.edits.values():
+            ed.editingFinished.connect(self.draw_section)
+        self.draw_section()
+
+    def draw_section(self):
+        try:
+            b = float(self.edits["b (cm)"].text())
+            h = float(self.edits["h (cm)"].text())
+            r = float(self.edits["r (cm)"].text())
+            de = float(self.edits["ϕ estribo (cm)"].text())
+            db = float(self.edits["ϕ varilla (cm)"].text())
+        except ValueError:
+            return
+
+        d = h - r - de - 0.5 * db
+
+        self.ax_sec.clear()
+        self.ax_sec.set_aspect('equal')
+        self.ax_sec.plot([0, b, b, 0, 0], [0, 0, h, h, 0], 'k-')
+        self.ax_sec.plot([r, b - r, b - r, r, r], [r, r, h - r, h - r, r], 'r--')
+
+        self.ax_sec.annotate('', xy=(0, -5), xytext=(b, -5), arrowprops=dict(arrowstyle='<->'))
+        self.ax_sec.text(b / 2, -6, 'b', ha='center', va='top')
+
+        self.ax_sec.annotate('', xy=(-5, 0), xytext=(-5, h), arrowprops=dict(arrowstyle='<->'))
+        self.ax_sec.text(-6, h / 2, 'h', ha='right', va='center', rotation=90)
+
+        self.ax_sec.annotate('', xy=(-2, h), xytext=(-2, d), arrowprops=dict(arrowstyle='<->'))
+        self.ax_sec.text(-3, (h + d) / 2, 'd', ha='right', va='center', rotation=90)
+
+        self.ax_sec.set_xlim(-10, b + 10)
+        self.ax_sec.set_ylim(-10, h + 10)
+        self.ax_sec.axis('off')
+        self.canvas.draw()
 
 
 
