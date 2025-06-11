@@ -1,7 +1,15 @@
 import sys
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QGridLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QButtonGroup, QMessageBox
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
+    QButtonGroup,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QGuiApplication
@@ -12,6 +20,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import CubicSpline
 import mplcursors
+
+# Tabla de áreas de refuerzo por diámetro (cm²)
+BAR_DB = {
+    "6": 0.28,
+    "8": 0.50,
+    "3/8": 0.71,
+    "12": 1.13,
+    "1/2": 1.29,
+    "5/8": 1.99,
+    "3/4": 2.84,
+    "1": 5.10,
+}
 
 class MomentApp(QMainWindow):
     def __init__(self):
@@ -273,9 +293,32 @@ class DesignWindow(QMainWindow):
         self.canvas = FigureCanvas(self.fig_sec)
         layout.addWidget(self.canvas, 3, 0, 1, 5)
 
+        # ---- Entradas para As diseñado en tres secciones ----
+        layout.addWidget(QLabel("n barras"), 4, 1)
+        layout.addWidget(QLabel("Ø (pulg)"), 4, 2)
+        layout.addWidget(QLabel("As (cm²)"), 4, 3)
+
+        self.as_inputs = []
+        for i, secc in enumerate(["Sección 1", "Sección 2", "Sección 3"], start=5):
+            layout.addWidget(QLabel(secc + ":"), i, 0)
+            n_edit = QLineEdit("0")
+            d_edit = QLineEdit("")
+            as_lab = QLabel("-")
+            layout.addWidget(n_edit, i, 1)
+            layout.addWidget(d_edit, i, 2)
+            layout.addWidget(as_lab, i, 3)
+            self.as_inputs.append((n_edit, d_edit, as_lab))
+            n_edit.editingFinished.connect(self.update_as)
+            d_edit.editingFinished.connect(self.update_as)
+
+        self.fig_as, self.ax_as = plt.subplots(figsize=(4, 3))
+        self.canvas_as = FigureCanvas(self.fig_as)
+        layout.addWidget(self.canvas_as, 8, 0, 1, 5)
+
         for ed in self.edits.values():
             ed.editingFinished.connect(self.draw_section)
         self.draw_section()
+        self.update_as()
 
     def draw_section(self):
         try:
@@ -307,6 +350,36 @@ class DesignWindow(QMainWindow):
         self.ax_sec.set_ylim(-10, h + 10)
         self.ax_sec.axis('off')
         self.canvas.draw()
+
+    def _bar_area(self, d_text):
+        key = d_text.strip().replace('"', '')
+        return BAR_DB.get(key)
+
+    def update_as(self):
+        x = [0.0, 0.5, 1.0]
+        as_vals = []
+        for n_edit, d_edit, lab in self.as_inputs:
+            try:
+                n = float(n_edit.text())
+            except ValueError:
+                n = 0.0
+            area_bar = self._bar_area(d_edit.text())
+            if area_bar is None:
+                lab.setText('-')
+                as_vals.append(0.0)
+            else:
+                val = n * area_bar
+                lab.setText(f"{val:.2f}")
+                as_vals.append(val)
+
+        self.ax_as.clear()
+        self.ax_as.plot(x, as_vals, 'bo-')
+        self.ax_as.set_xticks(x)
+        self.ax_as.set_xticklabels(['Sección 1', 'Sección 2', 'Sección 3'])
+        self.ax_as.set_ylabel('As (cm²)')
+        self.ax_as.set_xlabel('Posición')
+        self.ax_as.grid(True)
+        self.canvas_as.draw()
 
 
 
