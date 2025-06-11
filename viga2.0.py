@@ -26,6 +26,18 @@ BAR_DATA = {
     '1"': 5.10,
 }
 
+# Diámetros equivalentes en centímetros para las mismas claves que BAR_DATA
+DIAM_CM = {
+    '6mm': 0.6,
+    '8mm': 0.8,
+    '3/8"': 0.95,
+    '12mm': 1.2,
+    '1/2"': 1.27,
+    '5/8"': 1.59,
+    '3/4"': 1.91,
+    '1"': 2.54,
+}
+
 class MomentApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -260,8 +272,8 @@ class DesignWindow(QMainWindow):
             fc = float(self.edits["f'c (kg/cm²)"].text())
             fy = float(self.edits["fy (kg/cm²)"].text())
             phi = float(self.edits["φ"].text())
-            de = float(self.edits["ϕ estribo (cm)"].text())
-            db = float(self.edits["ϕ varilla (cm)"].text())
+            de = DIAM_CM.get(self.cb_estribo.currentText(), 0)
+            db = DIAM_CM.get(self.cb_varilla.currentText(), 0)
         except ValueError:
             return np.zeros(3), np.zeros(3)
 
@@ -298,8 +310,6 @@ class DesignWindow(QMainWindow):
             ("f'c (kg/cm²)", "280"),
             ("fy (kg/cm²)", "4200"),
             ("φ", "0.9"),
-            ("ϕ estribo (cm)", "1.0"),
-            ("ϕ varilla (cm)", "1.6"),
         ]
 
         self.edits = {}
@@ -310,6 +320,18 @@ class DesignWindow(QMainWindow):
             layout.addWidget(ed, row, 1)
             self.edits[text] = ed
 
+        # Combos para diámetro de estribo y de varilla
+        dia_opts = list(DIAM_CM.keys())
+        layout.addWidget(QLabel("ϕ estribo"), len(labels), 0)
+        self.cb_estribo = QComboBox(); self.cb_estribo.addItems(dia_opts)
+        self.cb_estribo.setCurrentText('3/8"')
+        layout.addWidget(self.cb_estribo, len(labels), 1)
+
+        layout.addWidget(QLabel("ϕ varilla"), len(labels)+1, 0)
+        self.cb_varilla = QComboBox(); self.cb_varilla.addItems(dia_opts)
+        self.cb_varilla.setCurrentText('5/8"')
+        layout.addWidget(self.cb_varilla, len(labels)+1, 1)
+
         qty_opts = [""] + [str(i) for i in range(1, 11)]
         dia_opts = [""] + list(BAR_DATA.keys())
 
@@ -318,21 +340,27 @@ class DesignWindow(QMainWindow):
         self.qty2_boxes, self.dia2_boxes = [], []
         self.as_total_labels = []
 
-        for row, label in enumerate(pos_labels):
-            layout.addWidget(QLabel(label), row, 2)
+        self.combo_grid = QGridLayout()
+
+        for i, label in enumerate(pos_labels):
+            row = 0 if i < 3 else 1
+            col = i % 3
 
             q1 = QComboBox(); q1.addItems(qty_opts); q1.setCurrentIndex(0)
             d1 = QComboBox(); d1.addItems(dia_opts); d1.setCurrentIndex(0)
             q2 = QComboBox(); q2.addItems(qty_opts); q2.setCurrentIndex(0)
             d2 = QComboBox(); d2.addItems(dia_opts); d2.setCurrentIndex(0)
-
-            layout.addWidget(q1, row, 3)
-            layout.addWidget(d1, row, 4)
-            layout.addWidget(q2, row, 5)
-            layout.addWidget(d2, row, 6)
-
             lbl = QLabel("0.00")
-            layout.addWidget(lbl, row, 7)
+
+            cell = QGridLayout()
+            cell.addWidget(QLabel(label), 0, 0, 1, 2, alignment=Qt.AlignCenter)
+            cell.addWidget(q1, 1, 0)
+            cell.addWidget(d1, 1, 1)
+            cell.addWidget(q2, 2, 0)
+            cell.addWidget(d2, 2, 1)
+            cell.addWidget(lbl, 3, 0, 1, 2, alignment=Qt.AlignCenter)
+
+            self.combo_grid.addLayout(cell, row, col)
 
             self.qty1_boxes.append(q1)
             self.dia1_boxes.append(d1)
@@ -340,22 +368,28 @@ class DesignWindow(QMainWindow):
             self.dia2_boxes.append(d2)
             self.as_total_labels.append(lbl)
 
-        layout.addWidget(QLabel("As min (cm²):"), 6, 2)
-        self.as_min_label = QLabel("0.00")
-        layout.addWidget(self.as_min_label, 6, 3)
+        row_start = len(labels) + 2
 
-        layout.addWidget(QLabel("As max (cm²):"), 7, 2)
+        layout.addWidget(QLabel("As min (cm²):"), row_start, 2)
+        self.as_min_label = QLabel("0.00")
+        layout.addWidget(self.as_min_label, row_start, 3)
+
+        layout.addWidget(QLabel("As max (cm²):"), row_start + 1, 2)
         self.as_max_label = QLabel("0.00")
-        layout.addWidget(self.as_max_label, 7, 3)
+        layout.addWidget(self.as_max_label, row_start + 1, 3)
 
         self.fig_sec, (self.ax_sec, self.ax_req, self.ax_des) = plt.subplots(
             3, 1, figsize=(5, 9), constrained_layout=True
         )
         self.canvas = FigureCanvas(self.fig_sec)
-        layout.addWidget(self.canvas, 8, 0, 1, 8)
+        layout.addWidget(self.canvas, row_start + 2, 0, 1, 8)
+
+        layout.addLayout(self.combo_grid, row_start + 3, 0, 1, 8)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self._redraw)
+        for cb in (self.cb_estribo, self.cb_varilla):
+            cb.currentIndexChanged.connect(self._redraw)
 
         for widgets in (
             self.qty1_boxes,
@@ -378,8 +412,8 @@ class DesignWindow(QMainWindow):
             b = float(self.edits["b (cm)"].text())
             h = float(self.edits["h (cm)"].text())
             r = float(self.edits["r (cm)"].text())
-            de = float(self.edits["ϕ estribo (cm)"].text())
-            db = float(self.edits["ϕ varilla (cm)"].text())
+            de = DIAM_CM.get(self.cb_estribo.currentText(), 0)
+            db = DIAM_CM.get(self.cb_varilla.currentText(), 0)
         except ValueError:
             return
 
