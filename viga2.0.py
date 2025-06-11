@@ -269,13 +269,16 @@ class DesignWindow(QMainWindow):
         self.as_total = QLabel("-")
         layout.addWidget(self.as_total, 2, 3, 1, 2)
 
-        self.fig_sec, self.ax_sec = plt.subplots(figsize=(4, 4))
+        self.fig_sec, (self.ax_sec, self.ax_dist) = plt.subplots(
+            2, 1, figsize=(4, 7), constrained_layout=True
+        )
         self.canvas = FigureCanvas(self.fig_sec)
         layout.addWidget(self.canvas, 3, 0, 1, 5)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self.draw_section)
         self.draw_section()
+        self.draw_beam_distribution()
 
     def draw_section(self):
         try:
@@ -306,6 +309,28 @@ class DesignWindow(QMainWindow):
         self.ax_sec.set_xlim(-10, b + 10)
         self.ax_sec.set_ylim(-10, h + 10)
         self.ax_sec.axis('off')
+        self.canvas.draw()
+
+    def draw_beam_distribution(self):
+        """Display As- and As+ values along a horizontal beam."""
+        x_ctrl = [0.0, 0.5, 1.0]
+        areas_n = np.abs(self.mn_corr)
+        areas_p = np.abs(self.mp_corr)
+
+        self.ax_dist.clear()
+        self.ax_dist.plot([0, 1], [0, 0], 'k-', lw=6)
+
+        y_off = 0.1 * max(np.max(areas_n), np.max(areas_p), 1)
+        for x, a_n in zip(x_ctrl, areas_n):
+            self.ax_dist.text(x, y_off, f"As- {a_n:.2f}", ha='center',
+                              va='bottom', color='b', fontsize=9)
+        for x, a_p in zip(x_ctrl, areas_p):
+            self.ax_dist.text(x, -y_off, f"As+ {a_p:.2f}", ha='center',
+                              va='top', color='r', fontsize=9)
+
+        self.ax_dist.set_xlim(-0.05, 1.05)
+        self.ax_dist.set_ylim(-2*y_off, 2*y_off)
+        self.ax_dist.axis('off')
         self.canvas.draw()
 
 
