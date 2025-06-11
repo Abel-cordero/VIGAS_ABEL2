@@ -269,13 +269,32 @@ class DesignWindow(QMainWindow):
         self.as_total = QLabel("-")
         layout.addWidget(self.as_total, 2, 3, 1, 2)
 
+        # ── Áreas de acero requeridas en cada sección ─────────────
+        as_labels = [
+            "As req. M1-", "As req. M2-", "As req. M3-",
+            "As req. M1+", "As req. M2+", "As req. M3+",
+        ]
+        self.as_req = []
+        for i, text in enumerate(as_labels, start=3):
+            layout.addWidget(QLabel(text + " (cm²):"), i, 2)
+            lb = QLabel("-")
+            layout.addWidget(lb, i, 3, 1, 2)
+            self.as_req.append(lb)
+
         self.fig_sec, self.ax_sec = plt.subplots(figsize=(4, 4))
         self.canvas = FigureCanvas(self.fig_sec)
-        layout.addWidget(self.canvas, 3, 0, 1, 5)
+        layout.addWidget(self.canvas, 9, 0, 1, 5)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self.draw_section)
         self.draw_section()
+
+    def _calc_as(self, Mu, b, d, fc, fy, phi):
+        Mu_kgcm = abs(Mu) * 1e5
+        root_arg = (2.89 * (fc * b * d)**2) / (fy**2) - (6.8 * fc * b * Mu_kgcm) / (phi * (fy**2))
+        if root_arg < 0:
+            root_arg = 0.0
+        return (1.7 * fc * b * d) / (2 * fy) - 0.5 * np.sqrt(root_arg)
 
     def draw_section(self):
         try:
@@ -307,6 +326,18 @@ class DesignWindow(QMainWindow):
         self.ax_sec.set_ylim(-10, h + 10)
         self.ax_sec.axis('off')
         self.canvas.draw()
+
+        try:
+            fc = float(self.edits["f'c (kg/cm²)"].text())
+            fy = float(self.edits["fy (kg/cm²)"].text())
+            phi = float(self.edits["φ"].text())
+        except ValueError:
+            return
+
+        moments = np.concatenate([self.mn_corr, self.mp_corr])
+        as_vals = [self._calc_as(M, b, d, fc, fy, phi) for M in moments]
+        for lb, val in zip(self.as_req, as_vals):
+            lb.setText(f"{val:.2f}")
 
 
 
