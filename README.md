@@ -84,6 +84,7 @@ Botones adicionales:
 “Captura para Word” → toma automáticamente una captura de esta ventana y la guarda como imagen o la envía a Word (usar pyautogui y opcionalmente python-docx)
 
 “Volver a Momentos” → para regresar a la etapa anterior y modificar datos si es necesario
+Botón **Memoria de Cálculo** → muestra un informe detallado de las fórmulas utilizadas y los valores obtenidos, copiándolo automáticamente al portapapeles para pegar en Word.
 
 CONSIDERACIONES TÉCNICAS:
 Lenguaje: Python 3.x
@@ -183,9 +184,14 @@ Todo el código reside en `viga2.0.py`. A modo de referencia rápida se listan l
 - **`DesignWindow`**
   - `_calc_as_req()` y `_calc_as_limits()` — cálculos de acero requerido y límites.
   - `_required_areas()` — devuelve las áreas necesarias por posición.
-  - `draw_section()`, `draw_required_distribution()` y `draw_design_distribution()` — funciones de representación gráfica.
+  - `draw_section()` y `draw_distribution()` — funciones de representación gráfica de las áreas de acero requeridas y diseñadas en un solo gráfico.
   - `update_design_as()` — calcula el refuerzo propuesto y verifica la base.
   - `_capture_design()` — copia la vista al portapapeles.
 
 Esta organización modular facilita la comunicación y coordinación dentro del equipo, ya que cada función se asocia a una tarea específica del flujo de trabajo.
 
+### Mejoras recientes
+- Memoria de cálculo ampliada con valores numéricos y botón para copiar al portapapeles.
+- Gráficos de momentos ajustados para reducir el espacio lateral no utilizado.
+- Ventana de diseño redimensionada (relación 1.5 ancho / 1 alto).
+- Distribución de acero unificada en un solo gráfico mostrando áreas requeridas y diseñadas.
