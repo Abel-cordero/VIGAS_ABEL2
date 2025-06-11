@@ -5,7 +5,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QGuiApplication
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg as FigureCanvas,
+)
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -29,9 +31,11 @@ class MomentApp(QMainWindow):
         layout.setHorizontalSpacing(10)
         layout.setColumnStretch(6, 1)
 
-        # ── Entradas de momentos ────────────────────────────────────────────────
+        # ── Entradas de momentos ──────────────────────────────
         self.m_neg_edits, self.m_pos_edits = [], []
-        for row, labels in enumerate([("M1–", "M2–", "M3–"), ("M1+", "M2+", "M3+")]):
+        for row, labels in enumerate(
+            [("M1–", "M2–", "M3–"), ("M1+", "M2+", "M3+")]
+        ):
             for i, text in enumerate(labels):
                 layout.addWidget(QLabel(text), row, 2*i)
                 ed = QLineEdit("0.0")
@@ -43,7 +47,7 @@ class MomentApp(QMainWindow):
                 else:
                     self.m_pos_edits.append(ed)
 
-        # ── Selector de sistema ────────────────────────────────────────────────
+        # ── Selector de sistema ────────────────────────────
         self.rb_dual1 = QRadioButton("Dual 1")
         self.rb_dual2 = QRadioButton("Dual 2")
         self.rb_dual2.setChecked(True)
@@ -54,7 +58,7 @@ class MomentApp(QMainWindow):
         layout.addWidget(self.rb_dual1, 2, 1)
         layout.addWidget(self.rb_dual2, 2, 2)
 
-        # ── Botones ─────────────────────────────────────────────────────────────
+        # ── Botones ────────────────────────────────────
         btn_calc    = QPushButton("Calcular Diagramas")
         btn_next    = QPushButton("Ir a Diseño de Acero")
         btn_capture = QPushButton("Capturar Diagramas")
@@ -65,8 +69,10 @@ class MomentApp(QMainWindow):
         layout.addWidget(btn_next,    2, 4)
         layout.addWidget(btn_capture, 2, 5)
 
-        # ── Canvas con diagramas ───────────────────────────────────────────────
-        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(6, 5), constrained_layout=True)
+        # ── Canvas con diagramas ─────────────────────────
+        self.fig, (self.ax1, self.ax2) = plt.subplots(
+            2, 1, figsize=(6, 5), constrained_layout=True
+        )
         self.canvas = FigureCanvas(self.fig)
         layout.addWidget(self.canvas, 3, 0, 1, 6)
 
@@ -78,7 +84,9 @@ class MomentApp(QMainWindow):
             mp = np.array([float(ed.text()) for ed in self.m_pos_edits])
             return mn, mp
         except ValueError:
-            QMessageBox.warning(self, "Error", "Ingrese valores numéricos válidos.")
+            QMessageBox.warning(
+                self, "Error", "Ingrese valores numéricos válidos."
+            )
             raise
 
     def plot_original(self):
@@ -186,12 +194,22 @@ class MomentApp(QMainWindow):
         self.plot_corrected(mn_c, mp_c)
 
     def on_next(self):
-        QMessageBox.information(self, "Siguiente", "Parte 2: diseño de acero aún no implementada.")
+        QMessageBox.information(
+            self, "Siguiente", "Parte 2: diseño de acero aún no implementada."
+        )
 
     def _capture_diagram(self):
         pix = self.canvas.grab()
         QGuiApplication.clipboard().setPixmap(pix)
-        QMessageBox.information(self, "Captura", "Diagramas copiados al portapapeles.\nUsa Ctrl+V para pegar.")
+        QMessageBox.information(
+            self,
+            "Captura",
+            "Diagramas copiados al portapapeles.\n"
+            "Usa Ctrl+V para pegar."
+        )
+
+
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
