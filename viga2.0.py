@@ -1,7 +1,8 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QButtonGroup, QMessageBox
+    QLineEdit, QPushButton, QRadioButton, QButtonGroup, QMessageBox,
+    QComboBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QGuiApplication
@@ -12,6 +13,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import CubicSpline
 import mplcursors
+
+# Tabla de diámetros y áreas (cm²) para barras de refuerzo
+BAR_DATA = {
+    '6mm': 0.28,
+    '8mm': 0.50,
+    '3/8"': 0.71,
+    '12mm': 1.13,
+    '1/2"': 1.29,
+    '5/8"': 1.99,
+    '3/4"': 2.84,
+    '1"': 5.10,
+}
 
 class MomentApp(QMainWindow):
     def __init__(self):
@@ -229,6 +242,34 @@ class DesignWindow(QMainWindow):
         self.setWindowTitle("Parte 2 – Diseño de Acero")
         self._build_ui()
 
+    def _calc_as_req(self, Mu, fc, b, d, fy, phi):
+        """Calculate required steel area for a single moment."""
+        Mu_kgcm = abs(Mu) * 100000  # convert TN·m to kg·cm
+        term = 1.7 * fc * b * d / (2 * fy)
+        root = (2.89 * (fc * b * d) ** 2) / (fy ** 2) - (
+            6.8 * fc * b * Mu_kgcm
+        ) / (phi * (fy ** 2))
+        root = max(root, 0)
+        return term - 0.5 * np.sqrt(root)
+
+    def _required_areas(self):
+        try:
+            b = float(self.edits["b (cm)"].text())
+            h = float(self.edits["h (cm)"].text())
+            r = float(self.edits["r (cm)"].text())
+            fc = float(self.edits["f'c (kg/cm²)"].text())
+            fy = float(self.edits["fy (kg/cm²)"].text())
+            phi = float(self.edits["φ"].text())
+            de = float(self.edits["ϕ estribo (cm)"].text())
+            db = float(self.edits["ϕ varilla (cm)"].text())
+        except ValueError:
+            return np.zeros(3), np.zeros(3)
+
+        d = h - r - de - 0.5 * db
+        as_n = [self._calc_as_req(m, fc, b, d, fy, phi) for m in self.mn_corr]
+        as_p = [self._calc_as_req(m, fc, b, d, fy, phi) for m in self.mp_corr]
+        return np.array(as_n), np.array(as_p)
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -253,32 +294,34 @@ class DesignWindow(QMainWindow):
             layout.addWidget(ed, row, 1)
             self.edits[text] = ed
 
-        layout.addWidget(QLabel("Varilla 1: n, ϕ(cm)"), 0, 2)
-        self.v1n = QLineEdit("0")
-        self.v1d = QLineEdit("0")
-        layout.addWidget(self.v1n, 0, 3)
-        layout.addWidget(self.v1d, 0, 4)
+        layout.addWidget(QLabel("Cantidad varillas"), 0, 2)
+        self.bar_qty = QLineEdit("0")
+        layout.addWidget(self.bar_qty, 0, 3)
 
-        layout.addWidget(QLabel("Varilla 2: n, ϕ(cm)"), 1, 2)
-        self.v2n = QLineEdit("0")
-        self.v2d = QLineEdit("0")
-        layout.addWidget(self.v2n, 1, 3)
-        layout.addWidget(self.v2d, 1, 4)
+        layout.addWidget(QLabel("Diámetro"), 1, 2)
+        self.bar_diam = QComboBox()
+        self.bar_diam.addItems(list(BAR_DATA.keys()))
+        layout.addWidget(self.bar_diam, 1, 3)
 
         layout.addWidget(QLabel("As total (cm²):"), 2, 2)
-        self.as_total = QLabel("-")
-        layout.addWidget(self.as_total, 2, 3, 1, 2)
+        self.as_total = QLabel("0.00")
+        layout.addWidget(self.as_total, 2, 3)
 
-        self.fig_sec, (self.ax_sec, self.ax_dist) = plt.subplots(
-            2, 1, figsize=(4, 7), constrained_layout=True
+        self.fig_sec, (self.ax_sec, self.ax_req, self.ax_des) = plt.subplots(
+            3, 1, figsize=(5, 9), constrained_layout=True
         )
         self.canvas = FigureCanvas(self.fig_sec)
         layout.addWidget(self.canvas, 3, 0, 1, 5)
 
         for ed in self.edits.values():
-            ed.editingFinished.connect(self.draw_section)
+            ed.editingFinished.connect(self._redraw)
+
+        self.bar_qty.editingFinished.connect(self.update_design_as)
+        self.bar_diam.currentIndexChanged.connect(self.update_design_as)
+
         self.draw_section()
-        self.draw_beam_distribution()
+        self.draw_required_distribution()
+        self.update_design_as()
 
     def draw_section(self):
         try:
@@ -311,26 +354,53 @@ class DesignWindow(QMainWindow):
         self.ax_sec.axis('off')
         self.canvas.draw()
 
-    def draw_beam_distribution(self):
-        """Display As- and As+ values along a horizontal beam."""
-        x_ctrl = [0.0, 0.5, 1.0]
-        areas_n = np.abs(self.mn_corr)
-        areas_p = np.abs(self.mp_corr)
+    def _redraw(self):
+        self.draw_section()
+        self.draw_required_distribution()
+        self.update_design_as()
 
-        self.ax_dist.clear()
-        self.ax_dist.plot([0, 1], [0, 0], 'k-', lw=6)
+    def draw_required_distribution(self):
+        """Display required As along the beam."""
+        x_ctrl = [0.0, 0.5, 1.0]
+        areas_n, areas_p = self._required_areas()
+
+        self.ax_req.clear()
+        self.ax_req.plot([0, 1], [0, 0], 'k-', lw=6)
 
         y_off = 0.1 * max(np.max(areas_n), np.max(areas_p), 1)
         for x, a_n in zip(x_ctrl, areas_n):
-            self.ax_dist.text(x, y_off, f"As- {a_n:.2f}", ha='center',
-                              va='bottom', color='b', fontsize=9)
+            self.ax_req.text(x, y_off, f"As- {a_n:.2f}", ha='center',
+                             va='bottom', color='b', fontsize=9)
         for x, a_p in zip(x_ctrl, areas_p):
-            self.ax_dist.text(x, -y_off, f"As+ {a_p:.2f}", ha='center',
-                              va='top', color='r', fontsize=9)
+            self.ax_req.text(x, -y_off, f"As+ {a_p:.2f}", ha='center',
+                             va='top', color='r', fontsize=9)
 
-        self.ax_dist.set_xlim(-0.05, 1.05)
-        self.ax_dist.set_ylim(-2*y_off, 2*y_off)
-        self.ax_dist.axis('off')
+        self.ax_req.set_xlim(-0.05, 1.05)
+        self.ax_req.set_ylim(-2*y_off, 2*y_off)
+        self.ax_req.axis('off')
+        self.canvas.draw()
+
+    def update_design_as(self):
+        try:
+            n = float(self.bar_qty.text())
+        except ValueError:
+            n = 0.0
+        area_bar = BAR_DATA.get(self.bar_diam.currentText(), 0)
+        total = n * area_bar
+        self.as_total.setText(f"{total:.2f}")
+        self.draw_design_distribution(total)
+
+    def draw_design_distribution(self, area):
+        x_ctrl = [0.0, 0.5, 1.0]
+        self.ax_des.clear()
+        self.ax_des.plot([0, 1], [0, 0], 'k-', lw=6)
+        y_off = 0.1 * max(area, 1)
+        for x in x_ctrl:
+            self.ax_des.text(x, y_off, f"Asd {area:.2f}", ha='center',
+                             va='bottom', color='g', fontsize=9)
+        self.ax_des.set_xlim(-0.05, 1.05)
+        self.ax_des.set_ylim(0, 2*y_off)
+        self.ax_des.axis('off')
         self.canvas.draw()
 
 
