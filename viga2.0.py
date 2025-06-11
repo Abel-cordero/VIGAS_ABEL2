@@ -266,9 +266,25 @@ class DesignWindow(QMainWindow):
             return np.zeros(3), np.zeros(3)
 
         d = h - r - de - 0.5 * db
+
+        self.as_min, self.as_max = self._calc_as_limits(fc, fy, b, d)
+        self.as_min_label.setText(f"{self.as_min:.2f}")
+        self.as_max_label.setText(f"{self.as_max:.2f}")
+
         as_n = [self._calc_as_req(m, fc, b, d, fy, phi) for m in self.mn_corr]
         as_p = [self._calc_as_req(m, fc, b, d, fy, phi) for m in self.mp_corr]
+
+        as_n = np.clip(as_n, self.as_min, self.as_max)
+        as_p = np.clip(as_p, self.as_min, self.as_max)
+
         return np.array(as_n), np.array(as_p)
+
+    def _calc_as_limits(self, fc, fy, b, d):
+        beta1 = 0.85 if fc <= 280 else 0.85 - ((fc - 280) / 70) * 0.05
+        as_min = 0.7 * (np.sqrt(fc) / fy) * b * d
+        pmax = 0.75 * ((0.85 * fc * beta1 / fy) * (6000 / (6000 + fy)))
+        as_max = pmax * b * d
+        return as_min, as_max
 
     def _build_ui(self):
         central = QWidget()
@@ -294,30 +310,64 @@ class DesignWindow(QMainWindow):
             layout.addWidget(ed, row, 1)
             self.edits[text] = ed
 
-        layout.addWidget(QLabel("Cantidad varillas"), 0, 2)
-        self.bar_qty = QLineEdit("0")
-        layout.addWidget(self.bar_qty, 0, 3)
+        qty_opts = [""] + [str(i) for i in range(1, 11)]
+        dia_opts = [""] + list(BAR_DATA.keys())
 
-        layout.addWidget(QLabel("Diámetro"), 1, 2)
-        self.bar_diam = QComboBox()
-        self.bar_diam.addItems(list(BAR_DATA.keys()))
-        layout.addWidget(self.bar_diam, 1, 3)
+        pos_labels = ["M1-", "M2-", "M3-", "M1+", "M2+", "M3+"]
+        self.qty1_boxes, self.dia1_boxes = [], []
+        self.qty2_boxes, self.dia2_boxes = [], []
+        self.as_total_labels = []
 
-        layout.addWidget(QLabel("As total (cm²):"), 2, 2)
-        self.as_total = QLabel("0.00")
-        layout.addWidget(self.as_total, 2, 3)
+        for row, label in enumerate(pos_labels):
+            layout.addWidget(QLabel(label), row, 2)
+
+            q1 = QComboBox(); q1.addItems(qty_opts); q1.setCurrentIndex(0)
+            d1 = QComboBox(); d1.addItems(dia_opts); d1.setCurrentIndex(0)
+            q2 = QComboBox(); q2.addItems(qty_opts); q2.setCurrentIndex(0)
+            d2 = QComboBox(); d2.addItems(dia_opts); d2.setCurrentIndex(0)
+
+            layout.addWidget(q1, row, 3)
+            layout.addWidget(d1, row, 4)
+            layout.addWidget(q2, row, 5)
+            layout.addWidget(d2, row, 6)
+
+            lbl = QLabel("0.00")
+            layout.addWidget(lbl, row, 7)
+
+            self.qty1_boxes.append(q1)
+            self.dia1_boxes.append(d1)
+            self.qty2_boxes.append(q2)
+            self.dia2_boxes.append(d2)
+            self.as_total_labels.append(lbl)
+
+        layout.addWidget(QLabel("As min (cm²):"), 6, 2)
+        self.as_min_label = QLabel("0.00")
+        layout.addWidget(self.as_min_label, 6, 3)
+
+        layout.addWidget(QLabel("As max (cm²):"), 7, 2)
+        self.as_max_label = QLabel("0.00")
+        layout.addWidget(self.as_max_label, 7, 3)
 
         self.fig_sec, (self.ax_sec, self.ax_req, self.ax_des) = plt.subplots(
             3, 1, figsize=(5, 9), constrained_layout=True
         )
         self.canvas = FigureCanvas(self.fig_sec)
-        layout.addWidget(self.canvas, 3, 0, 1, 5)
+        layout.addWidget(self.canvas, 8, 0, 1, 8)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self._redraw)
 
-        self.bar_qty.editingFinished.connect(self.update_design_as)
-        self.bar_diam.currentIndexChanged.connect(self.update_design_as)
+        for widgets in (
+            self.qty1_boxes,
+            self.dia1_boxes,
+            self.qty2_boxes,
+            self.dia2_boxes,
+        ):
+            for w in widgets:
+                w.currentIndexChanged.connect(self.update_design_as)
+
+        self.as_min = 0.0
+        self.as_max = 0.0
 
         self.draw_section()
         self.draw_required_distribution()
@@ -381,25 +431,47 @@ class DesignWindow(QMainWindow):
         self.canvas.draw()
 
     def update_design_as(self):
-        try:
-            n = float(self.bar_qty.text())
-        except ValueError:
-            n = 0.0
-        area_bar = BAR_DATA.get(self.bar_diam.currentText(), 0)
-        total = n * area_bar
-        self.as_total.setText(f"{total:.2f}")
-        self.draw_design_distribution(total)
+        totals = []
+        for q1, d1, q2, d2, lbl in zip(
+            self.qty1_boxes,
+            self.dia1_boxes,
+            self.qty2_boxes,
+            self.dia2_boxes,
+            self.as_total_labels,
+        ):
+            try:
+                n1 = int(q1.currentText()) if q1.currentText() else 0
+            except ValueError:
+                n1 = 0
+            a1 = BAR_DATA.get(d1.currentText(), 0)
 
-    def draw_design_distribution(self, area):
+            try:
+                n2 = int(q2.currentText()) if q2.currentText() else 0
+            except ValueError:
+                n2 = 0
+            a2 = BAR_DATA.get(d2.currentText(), 0)
+
+            total = n1 * a1 + n2 * a2
+            lbl.setText(f"{total:.2f}")
+            totals.append(total)
+
+        self.draw_design_distribution(totals)
+
+    def draw_design_distribution(self, areas):
         x_ctrl = [0.0, 0.5, 1.0]
+        areas_n = areas[:3]
+        areas_p = areas[3:]
         self.ax_des.clear()
         self.ax_des.plot([0, 1], [0, 0], 'k-', lw=6)
-        y_off = 0.1 * max(area, 1)
-        for x in x_ctrl:
-            self.ax_des.text(x, y_off, f"Asd {area:.2f}", ha='center',
+        y_off = 0.1 * max(max(areas_n, default=0), max(areas_p, default=0), 1)
+        for x, a in zip(x_ctrl, areas_n):
+            self.ax_des.text(x, y_off, f"Asd- {a:.2f}", ha='center',
                              va='bottom', color='g', fontsize=9)
+        for x, a in zip(x_ctrl, areas_p):
+            self.ax_des.text(x, -y_off, f"Asd+ {a:.2f}", ha='center',
+                             va='top', color='g', fontsize=9)
         self.ax_des.set_xlim(-0.05, 1.05)
-        self.ax_des.set_ylim(0, 2*y_off)
+        self.ax_des.set_ylim(-2 * y_off, 2 * y_off)
         self.ax_des.axis('off')
         self.canvas.draw()
 
