@@ -148,3 +148,44 @@ python viga2.0.py
 Se abrirá la interfaz gráfica donde se ingresan los momentos y se generan los
 diagramas correspondientes.
 
+
+## Formulario de datos y flujos
+
+La aplicación cuenta con dos ventanas principales:
+
+**Ventana de Momentos**
+
+- Seis campos numéricos (`QLineEdit`) para ingresar `M1-`, `M2-`, `M3-`, `M1+`, `M2+` y `M3+`.
+- Selector del sistema estructural con dos opciones: `Dual 1` y `Dual 2`.
+- Botones principales: **Calcular Diagramas**, **Ir a Diseño de Acero** y **Capturar Diagramas**.
+
+**Ventana de Diseño**
+
+- Parámetros de sección: `b`, `h`, `r`, `f'c`, `fy` y `φ`.
+- Selección de diámetros de estribo y varilla mediante `QComboBox`.
+- Combos de cantidad y diámetro para dos tipos de barra en cada posición de momento.
+- Indicadores de `As` mínimo/máximo y base requerida.
+- Botón **Capturar Diseño**.
+
+Los diagramas y resultados se actualizan cada vez que se modifican los datos o se presionan los botones de cálculo.
+
+## Estructura del código y objetos principales
+
+Todo el código reside en `viga2.0.py`. A modo de referencia rápida se listan las clases y funciones más relevantes:
+
+- **`MomentApp`**
+  - `get_moments()` — lee los valores ingresados.
+  - `correct_moments(mn, mp, sys_t)` — aplica la corrección de la NTP E.060.
+  - `plot_original()` y `plot_corrected()` — generan los diagramas.
+  - `on_calculate()` — coordina lectura y graficado.
+  - `on_next()` — abre la ventana de diseño con los momentos corregidos.
+
+- **`DesignWindow`**
+  - `_calc_as_req()` y `_calc_as_limits()` — cálculos de acero requerido y límites.
+  - `_required_areas()` — devuelve las áreas necesarias por posición.
+  - `draw_section()`, `draw_required_distribution()` y `draw_design_distribution()` — funciones de representación gráfica.
+  - `update_design_as()` — calcula el refuerzo propuesto y verifica la base.
+  - `_capture_design()` — copia la vista al portapapeles.
+
+Esta organización modular facilita la comunicación y coordinación dentro del equipo, ya que cada función se asocia a una tarea específica del flujo de trabajo.
+
