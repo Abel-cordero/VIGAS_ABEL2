@@ -119,3 +119,32 @@ Ventana 1: Ingreso de momentos → Diagramas superior/inferior → Corrección �
 
 Ventana 2: Visualización de viga con aceros → Selección de varillas → Resultados y verificación → Botón captura/exportar
 
+## Requisitos de plataforma
+
+- Python 3.8 o superior instalado en el sistema.
+- Sistema operativo con soporte para PyQt5 (Windows, macOS o distribuciones de
+  Linux con entorno de escritorio).
+
+## Instalación de dependencias
+
+1. Se recomienda crear un entorno virtual con `venv` o herramienta similar.
+2. Instalar las bibliotecas necesarias:
+
+   ```bash
+   pip install PyQt5 matplotlib numpy scipy mplcursors
+   ```
+
+   Para funciones opcionales de captura o exportación a Word se pueden agregar
+   `pyautogui` y `python-docx`.
+
+## Ejecución
+
+Desde la raíz del repositorio ejecutar:
+
+```bash
+python viga2.0.py
+```
+
+Se abrirá la interfaz gráfica donde se ingresan los momentos y se generan los
+diagramas correspondientes.
+
