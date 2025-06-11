@@ -307,7 +307,7 @@ class DesignWindow(QMainWindow):
             ("b (cm)", "30"),
             ("h (cm)", "50"),
             ("r (cm)", "4"),
-            ("f'c (kg/cm²)", "280"),
+            ("f'c (kg/cm²)", "210"),
             ("fy (kg/cm²)", "4200"),
             ("φ", "0.9"),
         ]
@@ -317,23 +317,25 @@ class DesignWindow(QMainWindow):
             layout.addWidget(QLabel(text), row, 0)
             ed = QLineEdit(val)
             ed.setAlignment(Qt.AlignRight)
+            ed.setFixedWidth(70)
             layout.addWidget(ed, row, 1)
             self.edits[text] = ed
 
         # Combos para diámetro de estribo y de varilla
-        dia_opts = list(DIAM_CM.keys())
+        estribo_opts = ["8mm", "3/8\"", "1/2\""]
         layout.addWidget(QLabel("ϕ estribo"), len(labels), 0)
-        self.cb_estribo = QComboBox(); self.cb_estribo.addItems(dia_opts)
+        self.cb_estribo = QComboBox(); self.cb_estribo.addItems(estribo_opts)
         self.cb_estribo.setCurrentText('3/8"')
         layout.addWidget(self.cb_estribo, len(labels), 1)
 
+        varilla_opts = ["1/2\"", "5/8\"", "3/4\"", "1\""]
         layout.addWidget(QLabel("ϕ varilla"), len(labels)+1, 0)
-        self.cb_varilla = QComboBox(); self.cb_varilla.addItems(dia_opts)
+        self.cb_varilla = QComboBox(); self.cb_varilla.addItems(varilla_opts)
         self.cb_varilla.setCurrentText('5/8"')
         layout.addWidget(self.cb_varilla, len(labels)+1, 1)
 
         qty_opts = [""] + [str(i) for i in range(1, 11)]
-        dia_opts = [""] + list(BAR_DATA.keys())
+        dia_opts = ["", "1/2\"", "5/8\"", "3/4\"", "1\""]
 
         pos_labels = ["M1-", "M2-", "M3-", "M1+", "M2+", "M3+"]
         self.qty1_boxes, self.dia1_boxes = [], []
@@ -378,13 +380,27 @@ class DesignWindow(QMainWindow):
         self.as_max_label = QLabel("0.00")
         layout.addWidget(self.as_max_label, row_start + 1, 3)
 
-        self.fig_sec, (self.ax_sec, self.ax_req, self.ax_des) = plt.subplots(
-            3, 1, figsize=(5, 9), constrained_layout=True
+        layout.addWidget(QLabel("Base req. (cm):"), row_start, 4)
+        self.base_req_label = QLabel("-")
+        layout.addWidget(self.base_req_label, row_start, 5)
+        self.base_msg_label = QLabel("")
+        layout.addWidget(self.base_msg_label, row_start + 1, 4, 1, 2)
+
+        self.fig_sec, self.ax_sec = plt.subplots(figsize=(3, 3), constrained_layout=True)
+        self.canvas_sec = FigureCanvas(self.fig_sec)
+        layout.addWidget(self.canvas_sec, 0, 2, len(labels) + 2, 4)
+
+        self.fig_dist, (self.ax_req, self.ax_des) = plt.subplots(
+            2, 1, figsize=(5, 6), constrained_layout=True
         )
-        self.canvas = FigureCanvas(self.fig_sec)
-        layout.addWidget(self.canvas, row_start + 2, 0, 1, 8)
+        self.canvas_dist = FigureCanvas(self.fig_dist)
+        layout.addWidget(self.canvas_dist, row_start + 2, 0, 1, 8)
 
         layout.addLayout(self.combo_grid, row_start + 3, 0, 1, 8)
+
+        self.btn_capture = QPushButton("Capturar Diseño")
+        self.btn_capture.clicked.connect(self._capture_design)
+        layout.addWidget(self.btn_capture, row_start + 4, 0, 1, 2)
 
         for ed in self.edits.values():
             ed.editingFinished.connect(self._redraw)
@@ -436,7 +452,7 @@ class DesignWindow(QMainWindow):
         self.ax_sec.set_xlim(-10, b + 10)
         self.ax_sec.set_ylim(-10, h + 10)
         self.ax_sec.axis('off')
-        self.canvas.draw()
+        self.canvas_sec.draw()
 
     def _redraw(self):
         self.draw_section()
@@ -462,10 +478,16 @@ class DesignWindow(QMainWindow):
         self.ax_req.set_xlim(-0.05, 1.05)
         self.ax_req.set_ylim(-2*y_off, 2*y_off)
         self.ax_req.axis('off')
-        self.canvas.draw()
+        self.canvas_dist.draw()
 
     def update_design_as(self):
+        as_req_n, as_req_p = self._required_areas()
+        as_reqs = list(as_req_n) + list(as_req_p)
         totals = []
+        n1_list = []
+        d1_list = []
+        n2_list = []
+        d2_list = []
         for q1, d1, q2, d2, lbl in zip(
             self.qty1_boxes,
             self.dia1_boxes,
@@ -486,8 +508,34 @@ class DesignWindow(QMainWindow):
             a2 = BAR_DATA.get(d2.currentText(), 0)
 
             total = n1 * a1 + n2 * a2
-            lbl.setText(f"{total:.2f}")
             totals.append(total)
+            n1_list.append(n1)
+            d1_list.append(d1.currentText())
+            n2_list.append(n2)
+            d2_list.append(d2.currentText())
+
+        for lbl, total, req in zip(self.as_total_labels, totals, as_reqs):
+            ok = " OK" if total >= req else ""
+            lbl.setText(f"{total:.2f}{ok}")
+
+        if totals:
+            idx = int(np.argmax(totals))
+            a = n1_list[idx]
+            d1 = DIAM_CM.get(d1_list[idx], 0)
+            bq = n2_list[idx]
+            d2 = DIAM_CM.get(d2_list[idx], 0)
+            try:
+                b_val = float(self.edits["b (cm)"].text())
+                r = float(self.edits["r (cm)"].text())
+                de = DIAM_CM.get(self.cb_estribo.currentText(), 0)
+            except ValueError:
+                self.base_req_label.setText("-")
+                self.base_msg_label.setText("")
+            else:
+                spacing = max(a + bq - 1, 0) * 2.5
+                base_req = 2 * r + 2 * de + a * d1 + bq * d2 + spacing
+                self.base_req_label.setText(f"{base_req:.1f}")
+                self.base_msg_label.setText("OK" if base_req <= b_val else "Aumentar base o capa")
 
         self.draw_design_distribution(totals)
 
@@ -507,7 +555,16 @@ class DesignWindow(QMainWindow):
         self.ax_des.set_xlim(-0.05, 1.05)
         self.ax_des.set_ylim(-2 * y_off, 2 * y_off)
         self.ax_des.axis('off')
-        self.canvas.draw()
+        self.canvas_dist.draw()
+
+    def _capture_design(self):
+        pix = self.centralWidget().grab()
+        QGuiApplication.clipboard().setPixmap(pix)
+        QMessageBox.information(
+            self,
+            "Captura",
+            "Dise\u00f1o copiado al portapapeles.\nUsa Ctrl+V para pegar.",
+        )
 
 
 
